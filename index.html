@@ -3,61 +3,82 @@
 
   <head>
     <meta charset="UTF-8">
-    <title>test4</title>
-    href='https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css' rel='stylesheet' /><link rel='stylesheet' href='https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css'><link rel="stylesheet" href="./style.css">
+    <title>Retail Segments in Glasgow_3156961C</title>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css' rel='stylesheet' />
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script><link rel='stylesheet' href='https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css'><link rel="stylesheet" href="./style.css">
 
   </head>
     
   <body>
   <div id="map"></div>
 <div class="console">
-        <h1>Retail Segments in Glasgow</h1>
-        <p>Slide to smoothly transition between consumer segments.</p>
+    <h1>Retail Segments in Glasgow</h1>
+    
+    <div class="map-guide" style="background: #f9f9f9; padding: 10px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #007cbf;">
+        <p style="margin: 0 0 5px 0; font-size: 12px; font-weight: bold; color: #333;">💡 Map Guide</p>
+        <ul style="font-size: 11px; color: #666; padding-left: 15px; margin: 0; line-height: 1.4;">
+            <li><strong>Slide:</strong> Transition between consumer segments.</li>
+            <li><strong>Search:</strong> Quickly locate specific stores by name.</li>
+            <li><strong>Proximity:</strong> Toggle switch below and click the map to see stores within 1km.</li>
+        </ul>
+    </div>
 
-        <div class="search-container" style="display: flex; gap: 8px; margin-bottom: 15px;">
-            <input type="text" id="store-search" placeholder="Search stores (e.g. Tesco)..." style="flex: 1; padding: 8px; border-radius: 20px; border: 1px solid #ddd; outline: none;">
-            <button id="reset-map" style="padding: 8px 15px; border-radius: 20px; border: none; background: #007cbf; color: white; cursor: pointer; font-weight: bold; font-size: 12px;">Reset</button>
+    <div class="search-container" style="display: flex; gap: 8px; margin-bottom: 15px;">
+        <input type="text" id="store-search" placeholder="Search stores (e.g. Tesco)..." style="flex: 1; padding: 8px; border-radius: 20px; border: 1px solid #ddd; outline: none;">
+        <button id="reset-map" style="padding: 8px 15px; border-radius: 20px; border: none; background: #007cbf; color: white; cursor: pointer; font-weight: bold; font-size: 12px;">Reset</button>
+    </div>
+
+    <div class="slider-container">
+        <input type="range" id="layer-slider" min="0" max="3" step="0.01" value="0" style="width: 100%;">
+        <div class="labels" style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; font-weight: bold; color: #444;">
+            <span>Budget</span>
+            <span>Mid</span>
+            <span>Upper-Mid</span>
+            <span>Premium</span>
         </div>
 
-        <div class="slider-container">
-            <input type="range" id="layer-slider" min="0" max="3" step="0.01" value="0" style="width: 100%;">
-            <div class="labels" style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; font-weight: bold; color: #444;">
-                <span>Budget</span>
-                <span>Mid</span>
-                <span>Upper-Mid</span>
-                <span>Premium</span>
-            </div>
+        <div class="toggle-container" style="margin: 15px 0 5px 0; display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 12px; font-weight: bold; color: #444;">Show All Store Points</span>
+            <label class="switch">
+                <input type="checkbox" id="points-toggle">
+                <span class="slider round"></span>
+            </label>
+        </div>
 
-            <div class="toggle-container" style="margin: 15px 0; display: flex; align-items: center; justify-content: space-between;">
-                <span style="font-size: 13px; font-weight: bold; color: #444;">Show All Store Points</span>
-                <label class="switch">
-                    <input type="checkbox" id="points-toggle">
-                    <span class="slider round"></span>
-                </label>
-            </div>
+        <div class="toggle-container" style="margin: 10px 0; display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 12px; font-weight: bold; color: #e67e22;">Proximity Search (1km)</span>
+            <label class="switch">
+                <input type="checkbox" id="proximity-toggle">
+                <span class="slider round"></span>
+            </label>
+        </div>
+        <p id="proximity-status" style="font-size: 10px; color: #999; margin: -5px 0 15px 0;">OFF - Toggle to enable map click search</p>
 
-            <div class="legend-container">
-                <h3>Legend</h3>
-                <div id="legend-list">
-                    <div class="legend-item"><span class="dot budget"></span> Budget</div>
-                    <div class="legend-item"><span class="dot mid"></span> Mid-range</div>
-                    <div class="legend-item"><span class="dot uppermid"></span> Upper-mid</div>
-                    <div class="legend-item"><span class="dot premium"></span> Premium</div>
-                </div>
+        <div class="legend-container">
+            <h3>Legend</h3>
+            <div id="legend-list">
+                <div class="legend-item"><span class="dot budget"></span> Budget</div>
+                <div class="legend-item"><span class="dot mid"></span> Mid-range</div>
+                <div class="legend-item"><span class="dot uppermid"></span> Upper-mid</div>
+                <div class="legend-item"><span class="dot premium"></span> Premium</div>
             </div>
+        </div>
 
+        <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+        <div class="directory-container">
+            <h3>Store Directory</h3>
+            <div id="store-directory-list" style="font-size: 11px; color: #666; line-height: 1.6;"></div>
             <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
-
-            <div class="directory-container">
-                <h3>Store Directory</h3>
-                <div id="store-directory-list" style="font-size: 11px; color: #666; line-height: 1.6;"></div>
-                <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
-                <div class="data-source" style="font-size: 10px; color: #999; text-align: center;">
-                    Source: <a href="https://geolytix.com/blog/supermarket-retail-points/" target="_blank" style="color: #007cbf; text-decoration: none;">GEOLYTIX Retail Points</a>
-                </div>
+            <div class="data-source" style="font-size: 10px; color: #999; text-align: center;">
+                Source: <a href="https://geolytix.com/blog/supermarket-retail-points/" target="_blank" style="color: #007cbf; text-decoration: none;">GEOLYTIX Retail Points</a>
             </div>
         </div>
     </div>
+</div>
+
+<script src='https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.js'></script>
+<script src="./script.js"></script>
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.js'></script><script  src="./script.js"></script>
 
   </body>

@@ -22,9 +22,11 @@ map.on('load', () => {
   const searchInput = document.getElementById('store-search');
   const resetButton = document.getElementById('reset-map');
   const pointsToggle = document.getElementById('points-toggle');
+  const proximityToggle = document.getElementById('proximity-toggle');
+  const proximityStatus = document.getElementById('proximity-status');
   const directoryList = document.getElementById('store-directory-list');
 
-  // --- 动态目录与颜色逻辑 ---
+  // --- 1. 颜色与目录逻辑 ---
   function getTierColor(tier) {
     const colors = { budget: '#007cbf', mid: '#5cb11b', uppermid: '#e67e22', premium: '#e74c3c' };
     return colors[tier] || '#666';
@@ -33,22 +35,35 @@ map.on('load', () => {
   function generateDirectory() {
     let html = '';
     for (const [tier, filter] of Object.entries(baseFilters)) {
-      html += `
-        <div class="directory-tier">
-          <strong style="color: ${getTierColor(tier)}">${tier.toUpperCase()}</strong>
-          <span>${filter[2].join(', ')}</span>
-        </div>`;
+      html += `<div class="directory-tier"><strong style="color: ${getTierColor(tier)}">${tier.toUpperCase()}</strong><span>${filter[2].join(', ')}</span></div>`;
     }
     if (directoryList) directoryList.innerHTML = html;
   }
   generateDirectory();
 
-  // --- 视觉更新函数 ---
+  // --- 2. 1km 探测图层初始化 ---
+  map.addSource('buffer-circle', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] }
+  });
+
+  map.addLayer({
+    id: 'buffer-layer',
+    type: 'fill',
+    source: 'buffer-circle',
+    paint: {
+      'fill-color': '#e67e22',
+      'fill-opacity': 0.12,
+      'fill-outline-color': '#e67e22',
+      'fill-outline-width': 1
+    }
+  });
+
+  // --- 3. 视觉透明度更新逻辑 ---
   function updateVisuals(value) {
     if (pointsToggle && pointsToggle.checked) return;
     categories.forEach((cat, index) => {
-      let opacity = 1 - Math.abs(value - index);
-      if (opacity < 0) opacity = 0;
+      let opacity = Math.max(0, 1 - Math.abs(value - index));
       const hId = `heat_${cat}`, pId = `point_${cat}`;
       if (map.getLayer(hId)) map.setPaintProperty(hId, 'heatmap-opacity', opacity);
       if (map.getLayer(pId)) {
@@ -58,10 +73,75 @@ map.on('load', () => {
     });
   }
 
-  // --- 滑动条、开关、搜索、重置逻辑 (保留原逻辑) ---
-  if (slider) {
-    slider.addEventListener('input', (e) => updateVisuals(parseFloat(e.target.value)));
-  }
+  // --- 4. 核心点击交互逻辑 (探测+弹窗) ---
+  map.on('click', (e) => {
+    // 强制清除旧弹窗，确保地图整洁
+    const popups = document.getElementsByClassName('mapboxgl-popup');
+    while (popups[0]) popups[0].remove();
+
+    // 如果 1km 探测开启，执行范围搜索
+    if (proximityToggle && proximityToggle.checked) {
+      const center = [e.lngLat.lng, e.lngLat.lat];
+      const circle = turf.buffer(turf.point(center), 1, { units: 'kilometers' });
+      map.getSource('buffer-circle').setData(circle);
+
+      categories.forEach(cat => {
+        const pId = `point_${cat}`;
+        if (map.getLayer(pId)) {
+          const proximityFilter = ['all', baseFilters[cat], ['within', circle]];
+          map.setFilter(pId, proximityFilter);
+        }
+      });
+      proximityStatus.innerText = "Active: Showing 1km radius";
+    }
+
+    // 检查是否点到图标
+    const features = map.queryRenderedFeatures(e.point, { layers: categories.map(cat => `point_${cat}`) });
+    
+    if (features.length > 0) {
+      const f = features[0];
+      const p = f.properties;
+      const cat = f.layer.id.replace('point_', '');
+      const headerColor = getTierColor(cat);
+      const fullAddress = [p.add_one, p.add_two].filter(Boolean).join(', ');
+      
+      // 生成 Google Maps 链接
+      const googleSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.fascia + ' ' + (p.postcode || ''))}`;
+
+      const content = `
+        <div style="min-width: 190px; font-family: sans-serif; padding-top: 5px;">
+          <div style="background: ${headerColor}; height: 6px; border-radius: 4px 4px 0 0; margin: -12px -12px 10px -12px;"></div>
+          <strong style="font-size: 15px; color: #333; display: block; margin-bottom: 8px; padding-right: 25px;">${p.fascia || 'Store'}</strong>
+          <div style="font-size: 12px; line-height: 1.6;">
+            <div style="display: flex; margin-bottom: 4px;"><span style="color: #999; width: 50px; flex-shrink: 0;">Loc:</span><span style="color: #444;">${p.suburb || 'Glasgow'}</span></div>
+            <div style="display: flex; margin-bottom: 4px;"><span style="color: #999; width: 50px; flex-shrink: 0;">Addr:</span><span style="color: #444;">${fullAddress || 'N/A'}</span></div>
+            <div style="display: flex;"><span style="color: #999; width: 50px; flex-shrink: 0;">Post:</span><span style="color: #444; font-family: monospace;">${p.postcode || 'N/A'}</span></div>
+          </div>
+          <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; border-top: 1px dotted #eee; padding-top: 10px;">
+            <a href="${googleSearchUrl}" target="_blank" style="color: #007cbf; text-decoration: none; font-size: 11px; font-weight: bold;">View Details ↗</a>
+            <span style="font-size: 10px; font-weight: bold; color: ${headerColor}; text-transform: uppercase;">${cat}</span>
+          </div>
+        </div>`;
+
+      // 修复：只保留一个弹窗实例，设置 closeButton 为 true
+      new mapboxgl.Popup({ 
+          offset: 15, 
+          closeButton: true, 
+          closeOnClick: true 
+        })
+        .setLngLat(f.geometry.coordinates)
+        .setHTML(content)
+        .addTo(map);
+    }
+  });
+
+  // --- 5. 鼠标与控制面板逻辑 ---
+  categories.forEach(cat => {
+    map.on('mouseenter', `point_${cat}`, () => map.getCanvas().style.cursor = 'pointer');
+    map.on('mouseleave', `point_${cat}`, () => map.getCanvas().style.cursor = '');
+  });
+
+  if (slider) slider.addEventListener('input', (e) => updateVisuals(parseFloat(e.target.value)));
 
   if (pointsToggle) {
     pointsToggle.addEventListener('change', (e) => {
@@ -81,24 +161,32 @@ map.on('load', () => {
     });
   }
 
+  if (proximityToggle) {
+    proximityToggle.addEventListener('change', (e) => {
+      if (!e.target.checked) {
+        map.getSource('buffer-circle').setData({ type: 'FeatureCollection', features: [] });
+        categories.forEach(cat => { if (map.getLayer(`point_${cat}`)) map.setFilter(`point_${cat}`, baseFilters[cat]); });
+        proximityStatus.innerText = "OFF - Toggle to enable map click search";
+        proximityStatus.style.color = "#999";
+      } else {
+        proximityStatus.innerText = "ON - Click on map to see 1km radius";
+        proximityStatus.style.color = "#e67e22";
+      }
+    });
+  }
+
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       const value = e.target.value.toLowerCase();
       const bounds = new mapboxgl.LngLatBounds();
       let hasVisibleFeatures = false;
       categories.forEach(cat => {
-        const pId = `point_${cat}`, hId = `heat_${cat}`, bF = baseFilters[cat];
+        const pId = `point_${cat}`, bF = baseFilters[cat];
         if (map.getLayer(pId)) {
-          if (value === "") {
-            map.setFilter(pId, bF); map.setFilter(hId, bF);
-            if (pointsToggle && pointsToggle.checked) {
-              map.setPaintProperty(pId, 'circle-opacity', 1);
-            } else { updateVisuals(parseFloat(slider.value)); }
-          } else {
+          if (value === "") { map.setFilter(pId, bF); updateVisuals(parseFloat(slider.value)); }
+          else {
             const sF = ['all', bF, ['>=', ['index-of', value, ['downcase', ['get', 'fascia']]], 0]];
-            map.setFilter(pId, sF); map.setFilter(hId, sF);
-            map.setPaintProperty(pId, 'circle-opacity', 1);
-            if (map.getLayer(hId)) map.setPaintProperty(hId, 'heatmap-opacity', 0);
+            map.setFilter(pId, sF); map.setPaintProperty(pId, 'circle-opacity', 1);
             map.queryRenderedFeatures({ layers: [pId] }).forEach(f => { bounds.extend(f.geometry.coordinates); hasVisibleFeatures = true; });
           }
         }
@@ -109,41 +197,17 @@ map.on('load', () => {
 
   if (resetButton) {
     resetButton.addEventListener('click', () => {
-      searchInput.value = ""; slider.value = 0; 
+      searchInput.value = ""; slider.value = 0;
       if (pointsToggle) pointsToggle.checked = false;
+      if (proximityToggle) proximityToggle.checked = false;
+      map.getSource('buffer-circle').setData({ type: 'FeatureCollection', features: [] });
       categories.forEach(cat => { if (map.getLayer(`point_${cat}`)) map.setFilter(`point_${cat}`, baseFilters[cat]); });
-      updateVisuals(0); 
+      proximityStatus.innerText = "OFF - Toggle to enable map click search";
+      proximityStatus.style.color = "#999";
+      const popups = document.getElementsByClassName('mapboxgl-popup');
+      while (popups[0]) popups[0].remove();
+      updateVisuals(0);
       map.flyTo({ center: [-4.2518, 55.8642], zoom: 11, essential: true });
     });
   }
-
-  // --- 5. 弹窗交互 (新增 postcode, suburb, 合并 add_one & add_two) ---
-  categories.forEach(cat => {
-    map.on('click', `point_${cat}`, (e) => {
-      const p = e.features[0].properties;
-      
-      // 合并地址行：如果 add_two 存在则拼接，否则只显示 add_one
-      const fullAddress = [p.add_one, p.add_two].filter(Boolean).join(', ');
-      
-      const content = `
-        <div style="padding:10px; min-width: 150px;">
-          <strong style="font-size:14px; color:#333;">${p.fascia}</strong>
-          <div style="margin: 8px 0; font-size:12px; color:#555; line-height:1.4;">
-            <p style="margin:2px 0;"><strong>Address:</strong> ${fullAddress || 'N/A'}</p>
-            <p style="margin:2px 0;"><strong>Suburb:</strong> ${p.suburb || 'N/A'}</p>
-            <p style="margin:2px 0;"><strong>Postcode:</strong> ${p.postcode || 'N/A'}</p>
-          </div>
-          <span class="tier-label bg-${cat}" style="color:white; padding:3px 8px; border-radius:4px; font-size:10px; font-weight:bold;">${cat.toUpperCase()}</span>
-          <div style="font-size:9px; color:#bbb; margin-top:10px; border-top:1px solid #eee; pt-5px;">Source: GEOLYTIX</div>
-        </div>`;
-
-      new mapboxgl.Popup({ offset: 15 })
-        .setLngLat(e.features[0].geometry.coordinates)
-        .setHTML(content)
-        .addTo(map);
-    });
-
-    map.on('mouseenter', `point_${cat}`, () => map.getCanvas().style.cursor = 'pointer');
-    map.on('mouseleave', `point_${cat}`, () => map.getCanvas().style.cursor = '');
-  });
 });
